@@ -1,0 +1,11 @@
+[general]
+name=QGIS_GeoActive ML Studio
+qgisMinimumVersion=3.44
+description=QGIS_GeoActive ML Studio for active learning, deep learning training, and geospatial uncertainty analysis.
+version=1.0
+author=Senior AI/GIS Engineer
+email=admin@example.com
+about=Active learning, deep learning training, and uncertainty analysis.
+tracker=
+repository=
+category=Vector

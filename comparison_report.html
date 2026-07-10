@@ -1,0 +1,17 @@
+
+    <h2 style='color: #2E86C1;'>🏆 Multi-Model Comparison Report</h2>
+    <p>Compared <b>3</b> models based on Segmentation Performance and Uncertainty Estimation.</p>
+    
+    <table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; width: 100%; text-align: center;">
+        <tr style="background-color: #f2f2f2;">
+            <th>Model Name</th><th>mIoU (↑)</th><th>OA (↑)</th><th>Kappa (↑)</th><th>AUROC (↑)</th><th>AUSE (↓)</th><th>HITL @20% (↑)</th>
+        </tr>
+        <tr><td>Mask2Former</td><td style=''>63.96%</td><td>78.82%</td><td>0.7417</td><td>0.6785</td><td>0.0944</td><td style=''>26.3%</td></tr><tr><td>SegFormer</td><td style='background-color:#E8F8F5;font-weight:bold;'>80.07%</td><td>87.90%</td><td>0.8512</td><td>0.7736</td><td>0.0364</td><td style=''>32.7%</td></tr><tr><td>DeepLabV3+</td><td style=''>76.58%</td><td>85.08%</td><td>0.8171</td><td>0.7814</td><td>0.0454</td><td style='background-color:#FEF9E7;font-weight:bold;'>33.5%</td></tr>
+    </table>
+    
+    <div style='margin-top:20px; padding:10px; background-color:#F8F9F9; border-left: 4px solid #3498DB;'>
+        <b>💡 Insights:</b><br>
+        - <b>Highest Performance (mIoU):</b> <span style='color:green;'>SegFormer</span><br>
+        - <b>Best Uncertainty Estimation (HITL):</b> <span style='color:#D35400;'>DeepLabV3+</span>
+    </div>
+    

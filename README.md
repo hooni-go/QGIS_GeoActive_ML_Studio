@@ -1,47 +1,44 @@
-# Anti-Graffiti Mask2Former QGIS Plugin
+# QGIS_GeoActive ML Studio Plugin
 
-This QGIS plugin enables the training and inference of a state-of-the-art **Mask2Former (Swin-Large Backbone)** model directly within QGIS. It is specifically designed for Remote Sensing imagery (supports both 8-bit RGB and 16-bit 4-band TIFF) and includes advanced features such as Focal Loss for class imbalance, automated class weight calculation, and uncertainty evaluation.
+This QGIS plugin enables the training, inference, and uncertainty evaluation of state-of-the-art Deep Learning models directly within QGIS. It is specifically designed for Remote Sensing imagery (supporting both 8-bit RGB and 16-bit 4-band TIFF) and integrates multiple architectures with advanced uncertainty quantification for quality control.
 
-## 🛠️ Environment Requirements (Crucial)
+## 🌟 Supported Architectures
+1. **Mask2Former (Swin-Large Backbone)**: Mask-classification based advanced architecture.
+2. **SegFormer (MiT-B2 Backbone)**: Light and powerful Transformer-based architecture.
+3. **DeepLabV3+ (ResNet-50 Backbone)**: ASPP-based multi-scale context aggregation model.
+4. **U-Net (ResNet-50 Backbone)**: Classic encoder-decoder baseline with skip connections.
 
-To ensure the plugin runs smoothly without CUDA memory errors or PyTorch autocast crashes, please configure your standalone Python environment with the following specific versions.
+## 🛠️ Environment Requirements
+
+To ensure the plugin runs smoothly, please configure a Python environment with the following dependencies.
 
 ### 1. CUDA & PyTorch Version
-This plugin uses Automatic Mixed Precision (AMP) and requires a modern PyTorch build with CUDA support.
-* **NVIDIA GPU:** Minimum 16GB VRAM recommended for Swin-Large.
+* **NVIDIA GPU:** Minimum 8GB+ VRAM recommended (VRAM requirements are optimized via sliding mini-batch inference).
 * **CUDA Toolkit:** CUDA 11.8 or CUDA 12.1+ recommended.
-* **PyTorch:** PyTorch **2.0.0 or higher** is strictly required (for `torch.amp.autocast` compatibility).
+* **PyTorch:** PyTorch **2.0.0 or higher** is required (for `torch.amp.autocast` compatibility).
 
-**Installation Command Example (CUDA 12.1):**
-```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-```
-
-### 2. Python Packages (`requirements.txt`)
-All dependencies are listed in `requirements.txt`. Install them using:
-```bash
-pip install -r requirements.txt
-```
-
-**Key Dependencies:**
-* `transformers >= 4.30.0` (Required for Mask2Former HuggingFace integration)
-* `rasterio` (Required for 16-bit GeoTIFF data loading)
-* `Pillow` (Image processing)
-* `numpy`, `pandas`, `matplotlib`, `scipy`
+### 2. Key Python Dependencies
+All dependencies are listed in `requirements.txt`.
+* `transformers >= 4.30.0` (For Mask2Former and SegFormer HuggingFace models)
+* `segmentation-models-pytorch` (For U-Net and DeepLabV3+ models)
+* `rasterio` (For 16-bit GeoTIFF imagery loading)
+* `numpy`, `pandas`, `matplotlib`, `scipy`, `scikit-learn`
 
 ## 🚀 Installation & Setup in QGIS
 
-1. **Plugin Installation:** Copy this entire `AntiGraffitiMask2Former` folder into your QGIS plugins directory.
-   * Windows: `C:\Users\%USERNAME%\AppData\Roaming\QGIS\QGIS3\profiles\default\python\plugins\AntiGraffitiMask2Former`
+1. **Plugin Installation:** Copy this entire `QGIS_GeoActive_ML_Studio` folder into your QGIS plugins directory.
+   * Windows: `C:\Users\%USERNAME%\AppData\Roaming\QGIS\QGIS3\profiles\default\python\plugins\QGIS_GeoActive_ML_Studio`
 2. **Python Environment Binding:** 
-   * In the QGIS Plugin UI, look for **"1. Python Environment"**.
-   * Select `Custom Portable Python`.
-   * Point the path to the `python.exe` of the virtual environment where you installed the PyTorch and requirements mentioned above.
-3. **Offline Model (Optional):**
-   * If you are in an offline network, place the downloaded HuggingFace `mask2former-swin-large` model files into the `offline_setup/models/mask2former-swin-large` directory.
+   * In the QGIS Plugin UI, select **"Custom Portable Python"** under **"1. Python Environment"**.
+   * Point the path to the `python.exe` of the virtual environment where dependencies are installed.
+3. **Offline Models (Optional):**
+   * Put offline model weights (e.g., HuggingFace pretrained folders) into the `offline_setup/models/` directory for offline environments.
 
 ## 🧠 Key Features
-* **Auto-Calculate Optimal Weights:** Automatically scans your dataset masks and calculates Inverse Class Frequency to assign optimal loss weights for imbalanced classes (e.g., Rare Greenhouses vs Common Forests).
-* **Auxiliary Focal Loss:** Custom Focal Loss map integrated into the HuggingFace Mask2Former outputs to force the model to focus on hard-to-predict pixels.
-* **Transfer Learning:** Select previous `.pt` checkpoints to resume training. The plugin automatically syncs past hyperparameters and class weights.
-* **Uncertainty Evaluation:** Multi-modal uncertainty evaluation (Entropy, Variance, Drop-Out) and CSV generation for academic papers.
+
+* **Auto-Calculate Optimal Class Weights:** Scans dataset masks to compute Inverse Class Frequency weights to mitigate extreme class imbalance.
+* **Auxiliary Focal Loss:** Custom Focal Loss integrated into model training to focus on hard-to-predict boundary pixels.
+* **Seed-based MC Dropout Uncertainty:** Quantifies epistemic uncertainty at pixel level via stochastic forward passes (MC Dropout, N=20).
+* **Uncertainty Reliability Verification:** Computes calibration error (ECE), sparsification error (AUSE), and error detection rates (AUROC).
+* **Human-in-the-Loop (HITL) Quality Control:** Identifies high-uncertainty areas (top 20%) to optimize manual inspection budgets and maximize error correction efficiency.
+* **Interactive Dashboard:** Beautiful HTML-rendered reports, confusion matrices, and reliability charts directly loaded in the QGIS interface.

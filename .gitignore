@@ -1,0 +1,52 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Virtual Environment (Very heavy python libraries)
+python_env/
+env/
+venv/
+ENV/
+
+# PyTorch Checkpoints and weight files (Very heavy, >100MB each)
+checkpoints/
+*.pt
+*.pth
+
+# Large Dataset files and temporary GIS files
+*.tif
+*.tiff
+*.npz
+*.geojson
+*.shp
+*.dbf
+*.shx
+*.prj
+*.qpj
+
+# Large Image outputs and qualitative panels
+*.png
+*.jpg
+*.jpeg
+*.pdf
+Individual_Comparison_Panels/
+Qualitative_Panels/
+
+# OS and IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Temporary scratch and logs
+scratch/
+*.log
