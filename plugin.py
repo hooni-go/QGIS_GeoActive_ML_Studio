@@ -30,9 +30,15 @@ class SubprocessWorker(QThread):
         
     def run(self):
         try:
+            import os
+            clean_env = os.environ.copy()
+            clean_env.pop("PYTHONHOME", None)
+            clean_env.pop("PYTHONPATH", None)
+            
             self.process = subprocess.Popen(
                 self.cmd,
                 cwd=self.cwd,
+                env=clean_env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -718,9 +724,31 @@ class QGISGeoActiveMLStudioPlugin:
             if not lbl_dir:
                 return # User cancelled
                 
+        # Auto-detect validation folder with the same timestamp
+        val_results_dir = ""
+        try:
+            timestamp_part = os.path.basename(res_dir).split("_Inference_", 1)[1]
+            model_part = os.path.basename(res_dir).split("_Inference_", 1)[0]
+            parent_results = os.path.dirname(os.path.dirname(res_dir))
+            for root, dirs, files in os.walk(parent_results):
+                for d in dirs:
+                    if d == f"{model_part}_Inference_{timestamp_part}" and os.path.join(root, d) != res_dir:
+                        val_results_dir = os.path.join(root, d)
+                        break
+                if val_results_dir:
+                    break
+        except Exception:
+            pass
+            
         cmd = [py_exe, "-u", eval_script, "--results_dir", res_dir, "--mapping_file", mapping_file, "--uncertainty", "bald", "--tile", "512", "--is_16bit", str(is_16bit), "--model_arch", model_arch, "--label_dir", lbl_dir]
-        
+        if val_results_dir:
+            cmd.extend(["--val_results_dir", val_results_dir])
+            
         self.dialog.log(f"Evaluating Uncertainty for {os.path.basename(res_dir)}...")
+        if val_results_dir:
+            self.dialog.log(f"[TS] Auto-detected matching validation results directory: {val_results_dir}")
+        else:
+            self.dialog.log("[TS] No matching validation results directory found. Temperature Scaling will default to T=1.0.")
         self.dialog.infer_btn.setEnabled(False)
         self.dialog.eval_uncertainty_btn.setEnabled(False)
         
@@ -1298,7 +1326,8 @@ class QGISGeoActiveMLStudioPlugin:
                 return
             
             is_16bit = "16-bit" in self.dialog.data_type_combo.currentText()
-            epochs = self.dialog.epochs_spin.value()
+            # For automated Active Learning retraining, force epochs to 5 to prevent overfitting
+            epochs = 5
             batch = self.dialog.batch_spin.value()
             
             # Use first checkpoint from inference setup to resume training
@@ -1339,6 +1368,7 @@ class QGISGeoActiveMLStudioPlugin:
                 
             train_script = os.path.join(self.plugin_dir, "scripts", "train.py")
             
+            # Use a gentler learning rate (2e-6) and force disable Focal Loss to prevent overfitting on boundary noise
             cmd = [
                 py_exe, train_script,
                 "--dataset_dir", dataset_dir,
@@ -1347,21 +1377,14 @@ class QGISGeoActiveMLStudioPlugin:
                 "--batch_size", str(batch),
                 "--mapping_file", map_path,
                 "--model_arch", model_arch,
-                "--resume_from", train_ckpt
+                "--resume_from", train_ckpt,
+                "--lr", "2e-6"
             ]
             
             if os.path.exists(weights_path):
                 cmd.extend(["--class_weights", weights_path])
                 
-            use_focal_loss = self.dialog.focal_loss_cb.isChecked()
-            if use_focal_loss:
-                cmd.append("--use_focal_loss")
-                focal_gamma = self.dialog.focal_gamma_spin.value()
-                focal_alpha = self.dialog.focal_alpha_spin.value()
-                cmd.extend(["--focal_gamma", str(focal_gamma)])
-                cmd.extend(["--focal_alpha", str(focal_alpha)])
-                
-            self.dialog.log(f"Executing: {' '.join(cmd)}")
+            self.dialog.log(f"Executing Active Learning Retraining: {' '.join(cmd)}")
             self.dialog.train_btn.setEnabled(False)
             self.dialog.infer_btn.setEnabled(False)
             self.is_inference = False

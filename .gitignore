@@ -57,3 +57,5 @@ offline_setup/wheels/
 
 # Temporary test scripts
 test_pipeline.py
+class_mappings.zip
+

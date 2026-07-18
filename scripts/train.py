@@ -32,6 +32,7 @@ def train():
     parser.add_argument("--focal_alpha", type=float, default=5.0)
     parser.add_argument("--class_weights", type=str, default="")
     parser.add_argument("--model_arch", type=str, default="mask2former")
+    parser.add_argument("--lr", type=float, default=1e-5, help="Learning rate")
     args = parser.parse_args()
 
     is_16bit = args.is_16bit.lower() == "true"
@@ -159,7 +160,7 @@ def train():
     if n_gpus > 1:
         print(f"Detected {n_gpus} GPUs. Using 1 GPU (cuda:0) for stability in QGIS Windows environment.")
     # Single Learning Rate 1e-5 (Benchmarked from H: drive)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5, weight_decay=0.05)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.05)
     
     # PolyLR (LambdaLR) Scheduler
     max_steps = args.epochs * len(train_loader)
