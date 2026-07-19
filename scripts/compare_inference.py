@@ -39,24 +39,38 @@ def main():
                 raw_name = names[idx] if idx < len(names) else "Model"
                 model_name = clean_model_name(raw_name)
                 
-                miou = d.get("miou_ensemble", d.get("miou_single_seed", 0)) * 100
-                
-                # Check for specific metrics, default to BALD if available, else first available
-                comp = d.get("comparison_metrics", {})
-                auroc, ause, hitl = 0, 0, 0
-                if comp:
-                    best_m = "BALD" if "BALD" in comp else list(comp.keys())[0]
-                    auroc = comp[best_m].get("AUROC", 0)
-                    ause = comp[best_m].get("AUSE", 0)
-                    hitl = comp[best_m].get("HITL_20_caught", 0)
+                # Try JSTARS new format first
+                if "all_pixel_primary" in d:
+                    c1 = d["all_pixel_primary"].get("c1", {})
+                    miou = c1.get("mIoU", 0.0) * 100
+                    oa = c1.get("OA", 0.0) * 100
+                    kappa = c1.get("Kappa", 0.0)
+                    auroc = c1.get("AUROC", 0.0)
+                    ece = c1.get("ECE", 0.0)
+                    ause = c1.get("AUSE", 0.0)
+                    grid = d.get("grid_comparisons", {})
+                    ne = grid.get("grid_512", {}).get("mean", {}).get("normalized_efficiency", 0.0) * 100
+                    hitl = grid.get("grid_512", {}).get("mean", {}).get("summ_20", 0.0) * 100
                 else:
-                    auroc = d.get("error_detection_AUROC", 0)
-                    ause = d.get("sparsification_AUSE", 0)
-                    h_info = d.get("hitl_errors_caught_by_budget", {})
-                    hitl = h_info.get("20%_area", 0) * 100
-                    
-                oa = d.get("overall_accuracy_OA", 0) * 100
-                kappa = d.get("kappa", 0)
+                    # Fallback to old format
+                    miou = d.get("miou_ensemble", d.get("miou_single_seed", 0.0)) * 100
+                    oa = d.get("overall_accuracy_OA", 0.0) * 100
+                    kappa = d.get("kappa", 0.0)
+                    ece = d.get("ece", 0.0)
+                    comp = d.get("comparison_metrics", {})
+                    if comp:
+                        best_m = "BALD" if "BALD" in comp else list(comp.keys())[0]
+                        auroc = comp[best_m].get("AUROC", 0.0)
+                        ause = comp[best_m].get("AUSE", 0.0)
+                        ece = comp[best_m].get("ECE", ece)
+                        hitl = comp[best_m].get("HITL_20_caught", 0.0)
+                        ne = comp[best_m].get("Normalized_Audit_Efficiency", 0.0) * 100
+                    else:
+                        auroc = d.get("error_detection_AUROC", 0.0)
+                        ause = d.get("sparsification_AUSE", 0.0)
+                        h_info = d.get("hitl_errors_caught_by_budget", {})
+                        hitl = h_info.get("20%_area", 0.0) * 100
+                        ne = d.get("normalized_audit_efficiency", 0.0) * 100
 
                 data.append({
                     "name": model_name,
@@ -65,7 +79,9 @@ def main():
                     "Kappa": kappa,
                     "AUROC": auroc,
                     "AUSE": ause,
-                    "HITL": hitl
+                    "ECE": ece,
+                    "HITL": hitl,
+                    "NE": ne
                 })
         except Exception as e:
             print(f"Error reading {f}: {e}")
@@ -80,42 +96,45 @@ def main():
     height = 0.5
     
     # Premium flat colors for academic publication
-    color_miou = "#1ABC9C"
-    color_auroc = "#E67E22"
-    color_hitl = "#3498DB"
+    color_ause = "#E67E22"
+    color_ece = "#E74C3C"
+    color_ne = "#3498DB"
 
-    # mIoU (Horizontal)
-    mious = [d["mIoU"] for d in data]
-    axes[0].barh(y, mious, height, color=color_miou, edgecolor='none')
-    axes[0].set_title("Segmentation Performance (mIoU %)", fontweight='bold', fontsize=12)
+    # 1. Sparsification Performance (AUSE) (Horizontal) - Lower is Better
+    auses = [d["AUSE"] for d in data]
+    axes[0].barh(y, auses, height, color=color_ause, edgecolor='none')
+    axes[0].set_title("Sparsification Performance (AUSE)", fontweight='bold', fontsize=12)
     axes[0].set_yticks(y)
     axes[0].set_yticklabels(names, fontsize=11, fontweight='bold')
     axes[0].invert_yaxis()  # Top-down order matching list
-    for i, v in enumerate(mious):
-        axes[0].text(v + 1.0, i, f"{v:.1f}%", va='center', ha='left', fontweight='bold', fontsize=10)
-    axes[0].set_xlim(0, max(mious) * 1.18)
+    for i, v in enumerate(auses):
+        axes[0].text(v + (max(auses) * 0.02 if max(auses) > 0 else 0.01), i, f"{v:.4f}", va='center', ha='left', fontweight='bold', fontsize=10)
+    max_ause = max(auses) if max(auses) > 0 else 1.0
+    axes[0].set_xlim(0, max_ause * 1.18)
 
-    # AUROC (Horizontal)
-    aurocs = [d["AUROC"] for d in data]
-    axes[1].barh(y, aurocs, height, color=color_auroc, edgecolor='none')
-    axes[1].set_title("Uncertainty AUROC (Higher is Better)", fontweight='bold', fontsize=12)
+    # 2. Calibration Error (ECE) (Horizontal) - Lower is Better
+    eces = [d["ECE"] for d in data]
+    axes[1].barh(y, eces, height, color=color_ece, edgecolor='none')
+    axes[1].set_title("Calibration Error (ECE)", fontweight='bold', fontsize=12)
     axes[1].set_yticks(y)
     axes[1].set_yticklabels(names, fontsize=11, fontweight='bold')
     axes[1].invert_yaxis()
-    for i, v in enumerate(aurocs):
-        axes[1].text(v + 0.01, i, f"{v:.3f}", va='center', ha='left', fontweight='bold', fontsize=10)
-    axes[1].set_xlim(0, max(aurocs) * 1.18)
+    for i, v in enumerate(eces):
+        axes[1].text(v + (max(eces) * 0.02 if max(eces) > 0 else 0.01), i, f"{v:.4f}", va='center', ha='left', fontweight='bold', fontsize=10)
+    max_ece = max(eces) if max(eces) > 0 else 1.0
+    axes[1].set_xlim(0, max_ece * 1.18)
 
-    # HITL (Horizontal)
-    hitls = [d["HITL"] for d in data]
-    axes[2].barh(y, hitls, height, color=color_hitl, edgecolor='none')
-    axes[2].set_title("HITL 20% Cost Efficiency (%)", fontweight='bold', fontsize=12)
+    # 3. Normalized Audit Efficiency (%) (Horizontal) - Higher is Better
+    nes = [d["NE"] for d in data]
+    axes[2].barh(y, nes, height, color=color_ne, edgecolor='none')
+    axes[2].set_title("Normalized Audit Efficiency (%)", fontweight='bold', fontsize=12)
     axes[2].set_yticks(y)
     axes[2].set_yticklabels(names, fontsize=11, fontweight='bold')
     axes[2].invert_yaxis()
-    for i, v in enumerate(hitls):
-        axes[2].text(v + 1.0, i, f"{v:.1f}%", va='center', ha='left', fontweight='bold', fontsize=10)
-    axes[2].set_xlim(0, max(hitls) * 1.18)
+    for i, v in enumerate(nes):
+        axes[2].text(v + (max(nes) * 0.02 if max(nes) > 0 else 1.0), i, f"{v:.1f}%", va='center', ha='left', fontweight='bold', fontsize=10)
+    max_ne = max(nes) if max(nes) > 0 else 100.0
+    axes[2].set_xlim(0, max_ne * 1.18)
 
     # Style improvements (Spines removal for modern look)
     for ax in axes:
@@ -133,15 +152,19 @@ def main():
     
     # HTML Report
     winner_miou = max(data, key=lambda x: x["mIoU"])["name"]
-    winner_hitl = max(data, key=lambda x: x["HITL"])["name"]
+    winner_ause = min(data, key=lambda x: x["AUSE"])["name"]
+    winner_ne = max(data, key=lambda x: x["NE"])["name"]
     
     tr_html = ""
     for d in data:
         w_miou = "background-color:#E8F8F5;font-weight:bold;" if d["name"] == winner_miou else ""
-        w_hitl = "background-color:#FEF9E7;font-weight:bold;" if d["name"] == winner_hitl else ""
+        w_ause = "background-color:#FDEDEC;font-weight:bold;" if d["name"] == winner_ause else ""
+        w_ne = "background-color:#FEF9E7;font-weight:bold;" if d["name"] == winner_ne else ""
+        
         tr_html += f"<tr><td>{d['name']}</td><td style='{w_miou}'>{d['mIoU']:.2f}%</td>"
         tr_html += f"<td>{d['OA']:.2f}%</td><td>{d['Kappa']:.4f}</td>"
-        tr_html += f"<td>{d['AUROC']:.4f}</td><td>{d['AUSE']:.4f}</td><td style='{w_hitl}'>{d['HITL']:.1f}%</td></tr>"
+        tr_html += f"<td>{d['AUROC']:.4f}</td><td style='{w_ause}'>{d['AUSE']:.4f}</td>"
+        tr_html += f"<td>{d['ECE']:.4f}</td><td style='{w_ne}'>{d['NE']:.1f}%</td></tr>"
 
     html = f"""
     <h2 style='color: #2E86C1;'>🏆 Multi-Model Comparison Report</h2>
@@ -149,7 +172,7 @@ def main():
     
     <table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; width: 100%; text-align: center;">
         <tr style="background-color: #f2f2f2;">
-            <th>Model Name</th><th>mIoU (↑)</th><th>OA (↑)</th><th>Kappa (↑)</th><th>AUROC (↑)</th><th>AUSE (↓)</th><th>HITL @20% (↑)</th>
+            <th>Model Name</th><th>mIoU (↑)</th><th>OA (↑)</th><th>Kappa (↑)</th><th>AUROC (↑)</th><th>AUSE (↓)</th><th>ECE (↓)</th><th>Normalized Audit Efficiency (↑)</th>
         </tr>
         {tr_html}
     </table>
@@ -157,7 +180,8 @@ def main():
     <div style='margin-top:20px; padding:10px; background-color:#F8F9F9; border-left: 4px solid #3498DB;'>
         <b>💡 Insights:</b><br>
         - <b>Highest Performance (mIoU):</b> <span style='color:green;'>{winner_miou}</span><br>
-        - <b>Best Uncertainty Estimation (HITL):</b> <span style='color:#D35400;'>{winner_hitl}</span>
+        - <b>Best Sparsification Error (AUSE):</b> <span style='color:red;'>{winner_ause}</span><br>
+        - <b>Best Audit Efficiency (NE):</b> <span style='color:#D35400;'>{winner_ne}</span>
     </div>
     """
     out_html = os.path.join(args.out_dir, "comparison_report.html")
@@ -169,9 +193,9 @@ def main():
     out_csv = os.path.join(args.out_dir, "comparison_report.csv")
     with open(out_csv, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
-        writer.writerow(["Model Name", "mIoU (%)", "OA (%)", "Kappa", "AUROC", "AUSE", "HITL @20% (%)"])
+        writer.writerow(["Model Name", "mIoU (%)", "OA (%)", "Kappa", "AUROC", "AUSE", "ECE", "Normalized Audit Efficiency (%)"])
         for d in data:
-            writer.writerow([d['name'], f"{d['mIoU']:.2f}", f"{d['OA']:.2f}", f"{d['Kappa']:.4f}", f"{d['AUROC']:.4f}", f"{d['AUSE']:.4f}", f"{d['HITL']:.1f}"])
+            writer.writerow([d['name'], f"{d['mIoU']:.2f}", f"{d['OA']:.2f}", f"{d['Kappa']:.4f}", f"{d['AUROC']:.4f}", f"{d['AUSE']:.4f}", f"{d['ECE']:.4f}", f"{d['NE']:.1f}"])
         
     print(f"Comparison graph saved to: {out_png}")
     print(f"Comparison report saved to: {out_html}")

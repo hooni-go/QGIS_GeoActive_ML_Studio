@@ -240,9 +240,9 @@ class QGISGeoActiveMLStudioPlugin:
             # Hook up dashboard list and buttons
             self.dialog.btn_load_res.clicked.connect(self.load_past_result)
             self.dialog.history_list.itemClicked.connect(self.on_history_clicked)
-            self.dialog.btn_hitl.clicked.connect(lambda: self.open_dashboard_file("hitl_comparison_curve.png", fallback="hitl_curve.png"))
-            self.dialog.btn_sparsification.clicked.connect(lambda: self.open_dashboard_file("sparsification.png"))
-            self.dialog.btn_cm.clicked.connect(lambda: self.open_dashboard_file("confusion_matrix.png"))
+            self.dialog.btn_hitl.clicked.connect(lambda: self.open_dashboard_file("residual_error_curve.png", fallback=["hitl_comparison_curve.png", "hitl_curve.png"]))
+            self.dialog.btn_sparsification.clicked.connect(lambda: self.open_dashboard_file("risk_coverage_curve.png", fallback=["sparsification.png", "accuracy_coverage_curve.png"]))
+            self.dialog.btn_cm.clicked.connect(lambda: self.open_dashboard_file("confusion_matrix.png", fallback=["reliability_diagram_scaled.png", "reliability_diagram.png"]))
             self.dialog.btn_panels.clicked.connect(lambda: self.open_dashboard_file("Qualitative_Panels"))
             
             portable_env = os.path.join(self.plugin_dir, "python_env")
@@ -334,28 +334,43 @@ class QGISGeoActiveMLStudioPlugin:
             with open(json_path, 'r', encoding='utf-8') as f:
                 d = json.load(f)
                 
-            miou_s = d.get("miou_single_seed", 0) * 100
-            miou_e = d.get("miou_ensemble", 0) * 100
-            gain = d.get("miou_gain", 0) * 100
-            ece = d.get("expected_calibration_error_ECE", 0)
-            
-            comp_metrics = d.get("comparison_metrics", {})
-            table_rows = ""
-            for m in ["BALD", "Entropy", "Max-Softmax", "STD"]:
-                if m in comp_metrics:
-                    mets = comp_metrics[m]
-                    auroc = mets.get("AUROC", 0)
-                    ause = mets.get("AUSE", 0)
-                    hitl = mets.get("HITL_20_caught", 0)
-                    table_rows += f"<tr><td><b>{m}</b></td><td>{auroc:.4f}</td><td>{ause:.4f}</td><td>{hitl:.1f}%</td></tr>"
-                    
-            if not table_rows:
-                old_auroc = d.get("error_detection_AUROC", 0)
-                old_ause = d.get("sparsification_AUSE", 0)
-                old_hitl_info = d.get("hitl_errors_caught_by_budget", {})
-                old_hitl = old_hitl_info.get("20%_area", 0) * 100
-                m_name = d.get("uncertainty_metric", "Selected")
-                table_rows = f"<tr><td><b>{m_name}</b></td><td>{old_auroc:.4f}</td><td>{old_ause:.4f}</td><td>{old_hitl:.1f}%</td></tr>"
+            # Try JSTARS new format first
+            if "all_pixel_primary" in d:
+                c1 = d["all_pixel_primary"].get("c1", {})
+                miou_s = d.get("miou_single_seed", c1.get("mIoU", 0.0)) * 100
+                miou_e = c1.get("mIoU", 0.0) * 100
+                gain = miou_e - miou_s
+                ece = c1.get("ECE", 0.0)
+                auroc = c1.get("AUROC", 0.0)
+                ause = c1.get("AUSE", 0.0)
+                
+                grid = d.get("grid_comparisons", {})
+                hitl = grid.get("grid_512", {}).get("mean", {}).get("summ_20", 0.0) * 100
+                
+                table_rows = f"<tr><td><b>Primary (c1)</b></td><td>{auroc:.4f}</td><td>{ause:.4f}</td><td>{hitl:.1f}%</td></tr>"
+            else:
+                miou_s = d.get("miou_single_seed", 0.0) * 100
+                miou_e = d.get("miou_ensemble", 0.0) * 100
+                gain = d.get("miou_gain", 0.0) * 100
+                ece = d.get("expected_calibration_error_ECE", d.get("ece", 0.0))
+                
+                comp_metrics = d.get("comparison_metrics", {})
+                table_rows = ""
+                for m in ["BALD", "Entropy", "Max-Softmax", "STD"]:
+                    if m in comp_metrics:
+                        mets = comp_metrics[m]
+                        auroc = mets.get("AUROC", 0.0)
+                        ause = mets.get("AUSE", 0.0)
+                        hitl = mets.get("HITL_20_caught", 0.0)
+                        table_rows += f"<tr><td><b>{m}</b></td><td>{auroc:.4f}</td><td>{ause:.4f}</td><td>{hitl:.1f}%</td></tr>"
+                        
+                if not table_rows:
+                    old_auroc = d.get("error_detection_AUROC", 0.0)
+                    old_ause = d.get("sparsification_AUSE", 0.0)
+                    old_hitl_info = d.get("hitl_errors_caught_by_budget", {})
+                    old_hitl = old_hitl_info.get("20%_area", 0.0) * 100
+                    m_name = d.get("uncertainty_metric", "Selected")
+                    table_rows = f"<tr><td><b>{m_name}</b></td><td>{old_auroc:.4f}</td><td>{old_ause:.4f}</td><td>{old_hitl:.1f}%</td></tr>"
             
             html = f"""
             <h3 style='color: #2E86C1;'>🚀 Evaluation Analytics</h3>
@@ -399,8 +414,13 @@ class QGISGeoActiveMLStudioPlugin:
         if candidates:
             path = candidates[0]
         elif fallback:
-            fallback_candidates = glob.glob(os.path.join(self.current_res_dir, f"*{fallback}"))
-            path = fallback_candidates[0] if fallback_candidates else None
+            fallbacks = fallback if isinstance(fallback, list) else [fallback]
+            path = None
+            for fb in fallbacks:
+                fallback_candidates = glob.glob(os.path.join(self.current_res_dir, f"*{fb}"))
+                if fallback_candidates:
+                    path = fallback_candidates[0]
+                    break
         else:
             path = None
             

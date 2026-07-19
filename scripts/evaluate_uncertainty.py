@@ -211,6 +211,37 @@ def miou_from_hist(hist, include_zero=False):
     else:
         return float(np.nanmean(iu[1:])), iu
 
+def classification_metrics_from_hist(hist, ignore=0):
+    hist = hist.astype(np.float64)
+    n = hist.shape[0]
+    classes = [c for c in range(n) if c != ignore]
+    prec, rec, f1, iou = {}, {}, {}, {}
+    for c in classes:
+        tp = hist[c, c]
+        fn = hist[c, :].sum() - tp
+        fp = hist[:, c].sum() - tp
+        rec[c]  = float(tp / (tp + fn)) if (tp + fn) > 0 else float("nan")
+        prec[c] = float(tp / (tp + fp)) if (tp + fp) > 0 else float("nan")
+        df = 2 * tp + fp + fn
+        f1[c]   = float(2 * tp / df) if df > 0 else float("nan")
+        di = tp + fp + fn
+        iou[c]  = float(tp / di) if di > 0 else float("nan")
+    N = hist.sum()
+    correct = float(np.trace(hist))
+    oa = float(correct / N) if N > 0 else float("nan")
+    row_marg = hist.sum(axis=1)
+    col_marg = hist.sum(axis=0)
+    pe = float((row_marg * col_marg).sum() / (N * N)) if N > 0 else float("nan")
+    kappa = float((oa - pe) / (1 - pe)) if (1 - pe) != 0 else float("nan")
+    return {
+        "precision": prec, "recall": rec, "f1": f1, "iou": iou,
+        "overall_accuracy": oa, "kappa": kappa,
+        "macro_precision": float(np.nanmean([prec[c] for c in classes])),
+        "macro_recall":    float(np.nanmean([rec[c]  for c in classes])),
+        "macro_f1":        float(np.nanmean([f1[c]   for c in classes])),
+        "macro_iou":       float(np.nanmean([iou[c]  for c in classes])),
+    }
+
 def expected_calibration_error(conf, correct, n_bins=15):
     conf = np.clip(conf, 0.0, 1.0)
     correct = correct.astype(np.float64)
@@ -939,7 +970,10 @@ def main():
             pred_c1 = np.argmax(probs_mean_m, axis=1)
             conf_c1 = np.max(probs_mean_m, axis=1)
             hist_c1 = fast_hist_np(gt_m, pred_c1, num_classes, ignore=(0 if mode == "fg_only" else None))
-            miou_c1, _ = miou_from_hist(hist_c1, include_zero=(mode == "all_pixel"))
+            miou_c1, iu_c1 = miou_from_hist(hist_c1, include_zero=(mode == "all_pixel"))
+            
+            clsm_ignore = 0 if mode == "fg_only" else 99999
+            clsm_c1 = classification_metrics_from_hist(hist_c1, ignore=clsm_ignore)
             
             # 실제 저장된 pred_id 평가 (진단용)
             hist_pred_id = fast_hist_np(gt_m, pred_id_m, num_classes, ignore=(0 if mode == "fg_only" else None))
@@ -962,7 +996,16 @@ def main():
             
             results[mode]["c1"] = {
                 "mIoU": miou_c1, "ECE": ece_c1, "AUROC": auroc_c1, "AUPRC": auprc_c1, "AUSE": ause_c1,
-                "error_base_rate": err_c1.mean()
+                "error_base_rate": err_c1.mean(),
+                "OA": clsm_c1["overall_accuracy"],
+                "Kappa": clsm_c1["kappa"],
+                "macro_precision": clsm_c1["macro_precision"],
+                "macro_recall": clsm_c1["macro_recall"],
+                "macro_f1": clsm_c1["macro_f1"],
+                "class_precision": clsm_c1["precision"],
+                "class_recall": clsm_c1["recall"],
+                "class_f1": clsm_c1["f1"],
+                "class_iou": clsm_c1["iou"]
             }
             
             # --- Condition 2 (선택적 분류, Abstain 필터링) ---
@@ -1433,7 +1476,38 @@ def main():
     plt.legend(fontsize=8, loc="upper left")
     plt.tight_layout()
     plt.savefig(os.path.join(args.results_dir, "reliability_diagram_scaled.png"), dpi=150)
-    # (D) 정성적 분석 패널(Qualitative Panels) 자동 생성
+    # (D) Confusion Matrix (전체 테스트셋 기준)
+    try:
+        gt_cm = np.concatenate([t["gt_sampled"] for t in loaded_tiles])
+        probs_cm = np.concatenate([t["probs_mean_sampled"] for t in loaded_tiles])
+        pred_cm = np.argmax(probs_cm, axis=1)
+        
+        hist_cm = fast_hist_np(gt_cm, pred_cm, num_classes)
+        
+        plt.figure(figsize=(6, 5))
+        hist_norm = hist_cm.astype('float') / (hist_cm.sum(axis=1, keepdims=True) + 1e-12)
+        plt.imshow(hist_norm, interpolation='nearest', cmap=plt.cm.Blues)
+        plt.title("Normalized Confusion Matrix (Recall)", fontsize=12, fontweight='bold')
+        plt.colorbar()
+        tick_marks = np.arange(num_classes)
+        plt.xticks(tick_marks, class_names, rotation=45, fontsize=8)
+        plt.yticks(tick_marks, class_names, fontsize=8)
+        
+        for i in range(num_classes):
+            for j in range(num_classes):
+                v = hist_norm[i, j]
+                if hist_cm[i, j] > 0:
+                    plt.text(j, i, f"{v:.2f}", ha="center", va="center", fontsize=7,
+                             color="white" if v > 0.5 else "#222222")
+        plt.tight_layout()
+        cm_path = os.path.join(args.results_dir, "confusion_matrix.png")
+        plt.savefig(cm_path, dpi=150)
+        plt.close()
+        print(f"[Vis] Confusion Matrix saved to: {cm_path}")
+    except Exception as e:
+        print(f"[Vis] [경고] Confusion Matrix 생성 실패: {e}")
+
+    # (E) 정성적 분석 패널(Qualitative Panels) 자동 생성
     try:
         generate_qualitative_panels(args.results_dir, label_dir, args.mapping_file, num_classes, dn_to_id, prefix=prefix)
     except Exception as e:
@@ -1460,6 +1534,33 @@ def main():
             "test_to_nearest_test_km": report["test_to_nearest_test_km"] if report else None,
             "coordinate_source": "geotiff" if crs else "nominal_sheet_grid",
         },
+        # Backward compatibility top-level keys
+        "overall_accuracy_OA": final_metrics["all_pixel"]["c1"]["OA"],
+        "kappa": final_metrics["all_pixel"]["c1"]["Kappa"],
+        "macro_precision": final_metrics["all_pixel"]["c1"]["macro_precision"],
+        "macro_recall": final_metrics["all_pixel"]["c1"]["macro_recall"],
+        "macro_f1": final_metrics["all_pixel"]["c1"]["macro_f1"],
+        "per_class_iou_ensemble": {
+            class_names[c]: (None if np.isnan(final_metrics["all_pixel"]["c1"]["class_iou"].get(c, np.nan)) else float(final_metrics["all_pixel"]["c1"]["class_iou"][c]))
+            for c in range(num_classes)
+        },
+        "per_class_precision_ensemble": {
+            class_names[c]: (None if np.isnan(final_metrics["all_pixel"]["c1"]["class_precision"].get(c, np.nan)) else float(final_metrics["all_pixel"]["c1"]["class_precision"][c]))
+            for c in range(num_classes)
+        },
+        "per_class_recall_ensemble": {
+            class_names[c]: (None if np.isnan(final_metrics["all_pixel"]["c1"]["class_recall"].get(c, np.nan)) else float(final_metrics["all_pixel"]["c1"]["class_recall"][c]))
+            for c in range(num_classes)
+        },
+        "per_class_f1_ensemble": {
+            class_names[c]: (None if np.isnan(final_metrics["all_pixel"]["c1"]["class_f1"].get(c, np.nan)) else float(final_metrics["all_pixel"]["c1"]["class_f1"][c]))
+            for c in range(num_classes)
+        },
+        "miou_single_seed": final_metrics["all_pixel"]["c1"]["mIoU"],
+        "miou_ensemble": final_metrics["all_pixel"]["c1"]["mIoU"],
+        "error_detection_AUROC": final_metrics["all_pixel"]["c1"]["AUROC"],
+        "sparsification_AUSE": final_metrics["all_pixel"]["c1"]["AUSE"],
+        "expected_calibration_error_ECE": final_metrics["all_pixel"]["c1"]["ECE"],
         "all_pixel_primary": {
             "c1": {
                 "mIoU": final_metrics["all_pixel"]["c1"]["mIoU"],
@@ -1468,6 +1569,11 @@ def main():
                 "AUPRC": final_metrics["all_pixel"]["c1"]["AUPRC"],
                 "AUSE": final_metrics["all_pixel"]["c1"]["AUSE"],
                 "error_base_rate": final_metrics["all_pixel"]["c1"]["error_base_rate"],
+                "OA": final_metrics["all_pixel"]["c1"]["OA"],
+                "Kappa": final_metrics["all_pixel"]["c1"]["Kappa"],
+                "macro_precision": final_metrics["all_pixel"]["c1"]["macro_precision"],
+                "macro_recall": final_metrics["all_pixel"]["c1"]["macro_recall"],
+                "macro_f1": final_metrics["all_pixel"]["c1"]["macro_f1"],
                 "bootstrap_95ci": bootstrap_summary["all_pixel"]["c1"]
             },
             "c2": {
@@ -1496,6 +1602,11 @@ def main():
                 "AUPRC": final_metrics["fg_only"]["c1"]["AUPRC"],
                 "AUSE": final_metrics["fg_only"]["c1"]["AUSE"],
                 "error_base_rate": final_metrics["fg_only"]["c1"]["error_base_rate"],
+                "OA": final_metrics["fg_only"]["c1"]["OA"],
+                "Kappa": final_metrics["fg_only"]["c1"]["Kappa"],
+                "macro_precision": final_metrics["fg_only"]["c1"]["macro_precision"],
+                "macro_recall": final_metrics["fg_only"]["c1"]["macro_recall"],
+                "macro_f1": final_metrics["fg_only"]["c1"]["macro_f1"],
                 "bootstrap_95ci": bootstrap_summary["fg_only"]["c1"]
             },
             "c2": {
@@ -1528,6 +1639,9 @@ def main():
     print(f"  - 결정론적 ECE (Scaled): {final_metrics['all_pixel']['det_scaled']['ECE_scaled']:.4f}")
     print(f"  - MC Dropout ECE (C1)  : {final_metrics['all_pixel']['c1']['ECE']:.4f}")
     print(f"  - All-pixel (C1) mIoU  : {final_metrics['all_pixel']['c1']['mIoU']:.4f}")
+    print(f"  - All-pixel (C1) OA    : {final_metrics['all_pixel']['c1']['OA']:.4f}")
+    print(f"  - All-pixel (C1) Kappa : {final_metrics['all_pixel']['c1']['Kappa']:.4f}")
+    print(f"  - All-pixel (C1) macro-F1: {final_metrics['all_pixel']['c1']['macro_f1']:.4f}")
     print(f"  - All-pixel (C1) AUROC : {final_metrics['all_pixel']['c1']['AUROC']:.4f}")
     print(f"  - All-pixel (C1) AUPRC : {final_metrics['all_pixel']['c1']['AUPRC']:.4f}")
     print(f"  - FG-only   (C1) mIoU  : {final_metrics['fg_only']['c1']['mIoU']:.4f}")
