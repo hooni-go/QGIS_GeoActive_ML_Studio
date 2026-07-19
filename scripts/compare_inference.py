@@ -96,45 +96,44 @@ def main():
     height = 0.5
     
     # Premium flat colors for academic publication
-    color_ause = "#E67E22"
-    color_ece = "#E74C3C"
-    color_ne = "#3498DB"
+    color_miou = "#1ABC9C"
+    color_auroc = "#E67E22"
+    color_hitl = "#3498DB"
 
-    # 1. Sparsification Performance (AUSE) (Horizontal) - Lower is Better
-    auses = [d["AUSE"] for d in data]
-    axes[0].barh(y, auses, height, color=color_ause, edgecolor='none')
-    axes[0].set_title("Sparsification Performance (AUSE)", fontweight='bold', fontsize=12)
+    # 1. Segmentation Performance (mIoU %) (Horizontal) - Higher is Better
+    mious = [d["mIoU"] for d in data]
+    axes[0].barh(y, mious, height, color=color_miou, edgecolor='none')
+    axes[0].set_title("Segmentation Performance (mIoU %)", fontweight='bold', fontsize=12)
     axes[0].set_yticks(y)
     axes[0].set_yticklabels(names, fontsize=11, fontweight='bold')
     axes[0].invert_yaxis()  # Top-down order matching list
-    for i, v in enumerate(auses):
-        axes[0].text(v + (max(auses) * 0.02 if max(auses) > 0 else 0.01), i, f"{v:.4f}", va='center', ha='left', fontweight='bold', fontsize=10)
-    max_ause = max(auses) if max(auses) > 0 else 1.0
-    axes[0].set_xlim(0, max_ause * 1.18)
+    for i, v in enumerate(mious):
+        axes[0].text(v + 1.0, i, f"{v:.1f}%", va='center', ha='left', fontweight='bold', fontsize=10)
+    axes[0].set_xlim(0, max(mious) * 1.18)
 
-    # 2. Calibration Error (ECE) (Horizontal) - Lower is Better
-    eces = [d["ECE"] for d in data]
-    axes[1].barh(y, eces, height, color=color_ece, edgecolor='none')
-    axes[1].set_title("Calibration Error (ECE)", fontweight='bold', fontsize=12)
+    # 2. Uncertainty AUROC (Higher is Better) (Horizontal) - Higher is Better
+    aurocs = [d["AUROC"] for d in data]
+    axes[1].barh(y, aurocs, height, color=color_auroc, edgecolor='none')
+    axes[1].set_title("Uncertainty AUROC (Higher is Better)", fontweight='bold', fontsize=12)
     axes[1].set_yticks(y)
     axes[1].set_yticklabels(names, fontsize=11, fontweight='bold')
     axes[1].invert_yaxis()
-    for i, v in enumerate(eces):
-        axes[1].text(v + (max(eces) * 0.02 if max(eces) > 0 else 0.01), i, f"{v:.4f}", va='center', ha='left', fontweight='bold', fontsize=10)
-    max_ece = max(eces) if max(eces) > 0 else 1.0
-    axes[1].set_xlim(0, max_ece * 1.18)
+    for i, v in enumerate(aurocs):
+        axes[1].text(v + 0.01, i, f"{v:.3f}", va='center', ha='left', fontweight='bold', fontsize=10)
+    max_auroc = max(aurocs) if max(aurocs) > 0 else 1.0
+    axes[1].set_xlim(0, max_auroc * 1.18)
 
-    # 3. Normalized Audit Efficiency (%) (Horizontal) - Higher is Better
-    nes = [d["NE"] for d in data]
-    axes[2].barh(y, nes, height, color=color_ne, edgecolor='none')
-    axes[2].set_title("Normalized Audit Efficiency (%)", fontweight='bold', fontsize=12)
+    # 3. HITL 20% Cost Efficiency (%) (Horizontal) - Higher is Better
+    hitls = [d["HITL"] for d in data]
+    axes[2].barh(y, hitls, height, color=color_hitl, edgecolor='none')
+    axes[2].set_title("HITL 20% Cost Efficiency (%)", fontweight='bold', fontsize=12)
     axes[2].set_yticks(y)
     axes[2].set_yticklabels(names, fontsize=11, fontweight='bold')
     axes[2].invert_yaxis()
-    for i, v in enumerate(nes):
-        axes[2].text(v + (max(nes) * 0.02 if max(nes) > 0 else 1.0), i, f"{v:.1f}%", va='center', ha='left', fontweight='bold', fontsize=10)
-    max_ne = max(nes) if max(nes) > 0 else 100.0
-    axes[2].set_xlim(0, max_ne * 1.18)
+    for i, v in enumerate(hitls):
+        axes[2].text(v + 1.0, i, f"{v:.1f}%", va='center', ha='left', fontweight='bold', fontsize=10)
+    max_hitl = max(hitls) if max(hitls) > 0 else 100.0
+    axes[2].set_xlim(0, max_hitl * 1.18)
 
     # Style improvements (Spines removal for modern look)
     for ax in axes:
@@ -152,19 +151,17 @@ def main():
     
     # HTML Report
     winner_miou = max(data, key=lambda x: x["mIoU"])["name"]
-    winner_ause = min(data, key=lambda x: x["AUSE"])["name"]
-    winner_ne = max(data, key=lambda x: x["NE"])["name"]
+    winner_hitl = max(data, key=lambda x: x["HITL"])["name"]
     
     tr_html = ""
     for d in data:
         w_miou = "background-color:#E8F8F5;font-weight:bold;" if d["name"] == winner_miou else ""
-        w_ause = "background-color:#FDEDEC;font-weight:bold;" if d["name"] == winner_ause else ""
-        w_ne = "background-color:#FEF9E7;font-weight:bold;" if d["name"] == winner_ne else ""
+        w_hitl = "background-color:#FEF9E7;font-weight:bold;" if d["name"] == winner_hitl else ""
         
         tr_html += f"<tr><td>{d['name']}</td><td style='{w_miou}'>{d['mIoU']:.2f}%</td>"
         tr_html += f"<td>{d['OA']:.2f}%</td><td>{d['Kappa']:.4f}</td>"
-        tr_html += f"<td>{d['AUROC']:.4f}</td><td style='{w_ause}'>{d['AUSE']:.4f}</td>"
-        tr_html += f"<td>{d['ECE']:.4f}</td><td style='{w_ne}'>{d['NE']:.1f}%</td></tr>"
+        tr_html += f"<td>{d['AUROC']:.4f}</td><td>{d['AUSE']:.4f}</td>"
+        tr_html += f"<td>{d['ECE']:.4f}</td><td style='{w_hitl}'>{d['HITL']:.1f}%</td></tr>"
 
     html = f"""
     <h2 style='color: #2E86C1;'>🏆 Multi-Model Comparison Report</h2>
@@ -172,7 +169,7 @@ def main():
     
     <table border="1" cellpadding="8" cellspacing="0" style="border-collapse: collapse; width: 100%; text-align: center;">
         <tr style="background-color: #f2f2f2;">
-            <th>Model Name</th><th>mIoU (↑)</th><th>OA (↑)</th><th>Kappa (↑)</th><th>AUROC (↑)</th><th>AUSE (↓)</th><th>ECE (↓)</th><th>Normalized Audit Efficiency (↑)</th>
+            <th>Model Name</th><th>mIoU (↑)</th><th>OA (↑)</th><th>Kappa (↑)</th><th>AUROC (↑)</th><th>AUSE (↓)</th><th>ECE (↓)</th><th>HITL @20% (↑)</th>
         </tr>
         {tr_html}
     </table>
@@ -180,8 +177,7 @@ def main():
     <div style='margin-top:20px; padding:10px; background-color:#F8F9F9; border-left: 4px solid #3498DB;'>
         <b>💡 Insights:</b><br>
         - <b>Highest Performance (mIoU):</b> <span style='color:green;'>{winner_miou}</span><br>
-        - <b>Best Sparsification Error (AUSE):</b> <span style='color:red;'>{winner_ause}</span><br>
-        - <b>Best Audit Efficiency (NE):</b> <span style='color:#D35400;'>{winner_ne}</span>
+        - <b>Best Uncertainty Estimation (HITL):</b> <span style='color:#D35400;'>{winner_hitl}</span>
     </div>
     """
     out_html = os.path.join(args.out_dir, "comparison_report.html")
@@ -193,9 +189,9 @@ def main():
     out_csv = os.path.join(args.out_dir, "comparison_report.csv")
     with open(out_csv, "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.writer(f)
-        writer.writerow(["Model Name", "mIoU (%)", "OA (%)", "Kappa", "AUROC", "AUSE", "ECE", "Normalized Audit Efficiency (%)"])
+        writer.writerow(["Model Name", "mIoU (%)", "OA (%)", "Kappa", "AUROC", "AUSE", "ECE", "HITL @20% (%)"])
         for d in data:
-            writer.writerow([d['name'], f"{d['mIoU']:.2f}", f"{d['OA']:.2f}", f"{d['Kappa']:.4f}", f"{d['AUROC']:.4f}", f"{d['AUSE']:.4f}", f"{d['ECE']:.4f}", f"{d['NE']:.1f}"])
+            writer.writerow([d['name'], f"{d['mIoU']:.2f}", f"{d['OA']:.2f}", f"{d['Kappa']:.4f}", f"{d['AUROC']:.4f}", f"{d['AUSE']:.4f}", f"{d['ECE']:.4f}", f"{d['HITL']:.1f}"])
         
     print(f"Comparison graph saved to: {out_png}")
     print(f"Comparison report saved to: {out_html}")
