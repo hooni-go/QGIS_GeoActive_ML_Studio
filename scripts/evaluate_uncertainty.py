@@ -1447,8 +1447,9 @@ def main():
         print("[Vis] 다중 베이스라인 Sparsification 및 HITL 비교 그래프 생성 중...", flush=True)
         # Pre-sampled arrays for fast sparsification computation
         gt_all = np.concatenate([t["gt_sampled"] for t in loaded_tiles], axis=0)
-        pred_all = np.concatenate([t["pred_id_sampled"] for t in loaded_tiles], axis=0)
-        err_all = (pred_all != gt_all) & (gt_all != 0)
+        probs_all = np.concatenate([t["probs_mean_sampled"] for t in loaded_tiles], axis=0)
+        pred_all = np.argmax(probs_all, axis=1)
+        err_all = (pred_all != gt_all)
 
         # Plot 1: Sparsification Curves Comparison
         plt.figure(figsize=(5, 4))
