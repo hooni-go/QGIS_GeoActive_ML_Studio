@@ -914,6 +914,10 @@ def main():
         })
 
     print(f"로드 완료: 총 {len(loaded_tiles)}개 타일, 고유 도엽 수: {len(unique_sheets)}개")
+    if len(loaded_tiles) == 0:
+        sys.exit("\n[오류] 불러온 타일이 0개입니다. 선택한 결과 폴더 내 .npz 파일의 원본 이미지 파일명과 지정하신 '정답 라벨 폴더' 내 이미지 파일명이 일치하는지 확인해 주세요.\n"
+                 f"  - 결과 폴더: {args.results_dir}\n"
+                 f"  - 지정된 라벨 폴더: {label_dir}")
 
     report, crs, test_sheet_distances = run_spatial_independence(args.results_dir, label_dir, prefix)
 
@@ -1437,6 +1441,156 @@ def main():
     plt.grid(True, ls=":")
     plt.savefig(os.path.join(args.results_dir, "residual_error_curve.png"), dpi=150, bbox_inches='tight')
     plt.close()
+
+    # (B.5) Multi-method Sparsification & HITL curves comparison (for academic publication)
+    try:
+        print("[Vis] 다중 베이스라인 Sparsification 및 HITL 비교 그래프 생성 중...", flush=True)
+        # Pre-sampled arrays for fast sparsification computation
+        gt_all = np.concatenate([t["gt_sampled"] for t in loaded_tiles], axis=0)
+        pred_all = np.concatenate([t["pred_id_sampled"] for t in loaded_tiles], axis=0)
+        err_all = (pred_all != gt_all) & (gt_all != 0)
+
+        # Plot 1: Sparsification Curves Comparison
+        plt.figure(figsize=(5, 4))
+        colors_baselines = {
+            "BALD": "#1D9E75",         # Teal
+            "Entropy": "#9C27B0",      # Purple
+            "Max-Softmax": "#2196F3",   # Blue
+            "STD": "#E91E63"           # Coral Pink
+        }
+        
+        # BALD
+        bald_all = np.concatenate([t["bald_sampled"] for t in loaded_tiles], axis=0)
+        f_b, c_b, o_b, base_b, ause_b = sparsification(bald_all, err_all)
+        plt.plot(f_b * 100, c_b, color=colors_baselines["BALD"], lw=2, label=f"BALD (AUSE={ause_b:.4f})")
+        
+        # Entropy
+        ent_all = np.concatenate([t["entropy_sampled"] for t in loaded_tiles], axis=0)
+        _, c_e, _, _, ause_e = sparsification(ent_all, err_all)
+        plt.plot(f_b * 100, c_e, color=colors_baselines["Entropy"], lw=2, label=f"Entropy (AUSE={ause_e:.4f})")
+        
+        # Max-Softmax (1.0 - conf)
+        conf_all = np.concatenate([t["conf_sampled"] for t in loaded_tiles], axis=0)
+        unc_conf = 1.0 - conf_all
+        _, c_c, _, _, ause_c = sparsification(unc_conf, err_all)
+        plt.plot(f_b * 100, c_c, color=colors_baselines["Max-Softmax"], lw=2, label=f"Max-Softmax (AUSE={ause_c:.4f})")
+        
+        # STD
+        std_all = np.concatenate([t["std_sampled"] for t in loaded_tiles], axis=0)
+        _, c_s, _, _, ause_s = sparsification(std_all, err_all)
+        plt.plot(f_b * 100, c_s, color=colors_baselines["STD"], lw=2, label=f"STD (AUSE={ause_s:.4f})")
+        
+        # Oracle & Random
+        plt.plot(f_b * 100, o_b, color="#6B7280", lw=2, ls="--", label="Oracle")
+        plt.axhline(base_b, color="#D85A30", lw=1.5, ls=":", label="Random (base error)")
+        
+        plt.xlabel("Fraction of pixels removed (%)")
+        plt.ylabel("Error rate of remaining")
+        plt.title("Sparsification")
+        plt.legend(fontsize=8, loc="upper right")
+        plt.grid(True, ls=":")
+        plt.tight_layout()
+        
+        sp_path = os.path.join(args.results_dir, "sparsification.png")
+        plt.savefig(sp_path, dpi=150)
+        if prefix:
+            plt.savefig(os.path.join(args.results_dir, prefix + "sparsification.png"), dpi=150)
+        plt.close()
+
+        # Plot 2: HITL Comparison Curves (512 Grid)
+        errs_grid = []
+        npix_grid = []
+        bald_grid = []
+        ent_grid = []
+        conf_grid = []
+        std_grid = []
+        
+        for t in loaded_tiles:
+            gt_t = t["gt"]
+            pred_t = t["pred_ensemble"]
+            err_t = (pred_t != gt_t) & (gt_t != 0)
+            
+            u_bald = t["bald"]
+            u_ent = t["entropy"]
+            u_std = t["std"]
+            u_conf = 1.0 - t["conf"]
+            
+            H, W = gt_t.shape
+            for y in range(0, H, 512):
+                for x in range(0, W, 512):
+                    vm = (gt_t[y:y+512, x:x+512] != 0)
+                    npix = int(vm.sum())
+                    if npix == 0:
+                        continue
+                    errs_grid.append(err_t[y:y+512, x:x+512].sum())
+                    npix_grid.append(npix)
+                    
+                    bald_grid.append(u_bald[y:y+512, x:x+512][vm].mean())
+                    ent_grid.append(u_ent[y:y+512, x:x+512][vm].mean())
+                    std_grid.append(u_std[y:y+512, x:x+512][vm].mean())
+                    conf_grid.append(u_conf[y:y+512, x:x+512][vm].mean())
+                    
+        errs_grid = np.array(errs_grid)
+        npix_grid = np.array(npix_grid)
+        total_errors = float(errs_grid.sum())
+        total_pix = float(npix_grid.sum())
+        
+        if total_errors > 0 and total_pix > 0:
+            plt.figure(figsize=(6, 5))
+            
+            # Oracle
+            order_o = np.argsort(errs_grid)[::-1]
+            a_o = np.cumsum(npix_grid[order_o]) / total_pix
+            e_o = np.cumsum(errs_grid[order_o]) / total_errors
+            plt.plot(np.concatenate([[0.0], a_o]) * 100, np.concatenate([[0.0], e_o]) * 100, 
+                     color="#6B7280", lw=2, ls="--", label="Oracle (Best Possible)")
+            
+            # Random
+            plt.plot([0, 100], [0, 100], color="#D85A30", lw=1.5, ls="--", label="Random")
+            
+            # BALD
+            order_b = np.argsort(np.array(bald_grid))[::-1]
+            a_b = np.cumsum(npix_grid[order_b]) / total_pix
+            e_b = np.cumsum(errs_grid[order_b]) / total_errors
+            plt.plot(np.concatenate([[0.0], a_b]) * 100, np.concatenate([[0.0], e_b]) * 100, 
+                     color=colors_baselines["BALD"], lw=2, label="BALD")
+                     
+            # Entropy
+            order_e = np.argsort(np.array(ent_grid))[::-1]
+            a_e = np.cumsum(npix_grid[order_e]) / total_pix
+            e_e = np.cumsum(errs_grid[order_e]) / total_errors
+            plt.plot(np.concatenate([[0.0], a_e]) * 100, np.concatenate([[0.0], e_e]) * 100, 
+                     color=colors_baselines["Entropy"], lw=2, label="Entropy")
+                     
+            # Max-Softmax
+            order_c = np.argsort(np.array(conf_grid))[::-1]
+            a_c = np.cumsum(npix_grid[order_c]) / total_pix
+            e_c = np.cumsum(errs_grid[order_c]) / total_errors
+            plt.plot(np.concatenate([[0.0], a_c]) * 100, np.concatenate([[0.0], e_c]) * 100, 
+                     color=colors_baselines["Max-Softmax"], lw=2, label="Max-Softmax")
+                     
+            # STD
+            order_s = np.argsort(np.array(std_grid))[::-1]
+            a_s = np.cumsum(npix_grid[order_s]) / total_pix
+            e_s = np.cumsum(errs_grid[order_s]) / total_errors
+            plt.plot(np.concatenate([[0.0], a_s]) * 100, np.concatenate([[0.0], e_s]) * 100, 
+                     color=colors_baselines["STD"], lw=2, label="STD")
+                     
+            plt.xlabel("Reviewed area (%)")
+            plt.ylabel("Errors caught (%)")
+            plt.title("HITL Efficiency Comparison (tile=512)")
+            plt.legend(fontsize=8, loc="lower right")
+            plt.grid(True, ls=":")
+            plt.tight_layout()
+            
+            hp_path = os.path.join(args.results_dir, "hitl_curve.png")
+            plt.savefig(hp_path, dpi=150)
+            if prefix:
+                plt.savefig(os.path.join(args.results_dir, prefix + "hitl_curve.png"), dpi=150)
+                plt.savefig(os.path.join(args.results_dir, prefix + "hitl_comparison_curve.png"), dpi=150)
+            plt.close()
+    except Exception as ex:
+        print(f"[경고] 다중 베이스라인 곡선 플로팅 중 오류 발생 (진행은 계속됩니다): {ex}", flush=True)
 
     # (C) Reliability Diagram (scaled) 및 표본수 마킹
     plt.figure(figsize=(4.5, 4.5))
