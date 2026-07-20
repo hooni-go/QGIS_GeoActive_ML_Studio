@@ -688,58 +688,66 @@ class QGISGeoActiveMLStudioPlugin:
         else:
             model_arch = "mask2former"
             
-        # Try to guess label dir from last inference or results folder structure, otherwise prompt
+        # 1. Guess from res_dir structure with file verification (High priority)
         lbl_dir = ""
-        if hasattr(self, 'last_infer_img_dir') and self.last_infer_img_dir:
-            guessed_lbl = os.path.join(os.path.dirname(self.last_infer_img_dir), "label")
-            if os.path.isdir(guessed_lbl):
-                lbl_dir = guessed_lbl
-                
-        if not lbl_dir:
-            # Guess from res_dir structure: [DatasetRoot]/Results/[DatasetName]/[Model]_Inference_[Timestamp]
-            try:
-                parent1 = os.path.dirname(os.path.normpath(res_dir))
-                parent2 = os.path.dirname(parent1)
-                dataset_root = os.path.dirname(parent2)
-                
-                # Check splits: test/label, val/label, train/label, label
-                for split in ["test", "val", "train", ""]:
-                    candidate = os.path.join(dataset_root, split, "label") if split else os.path.join(dataset_root, "label")
-                    candidate = os.path.normpath(candidate)
-                    if os.path.isdir(candidate):
-                        # Verify matching files by checking if first npz matches any file here
-                        unc_dir = os.path.join(res_dir, "uncertainty_data")
-                        if os.path.isdir(unc_dir):
-                            npz_files = [f for f in os.listdir(unc_dir) if f.endswith(".npz")]
-                            if npz_files:
-                                d_file = npz_files[0]
-                                base_name = os.path.splitext(d_file)[0]
-                                matched = False
-                                for ext in [".tif", ".tiff", ".png", ".jpg"]:
-                                    if os.path.exists(os.path.join(candidate, base_name + ext)):
-                                        matched = True
-                                        break
-                                if matched:
-                                    lbl_dir = candidate
+        try:
+            parent1 = os.path.dirname(os.path.normpath(res_dir))
+            parent2 = os.path.dirname(parent1)
+            dataset_root = os.path.dirname(parent2)
+            
+            # Check splits: test/label, val/label, train/label, label
+            for split in ["test", "val", "train", ""]:
+                candidate = os.path.join(dataset_root, split, "label") if split else os.path.join(dataset_root, "label")
+                candidate = os.path.normpath(candidate)
+                if os.path.isdir(candidate):
+                    # Verify matching files by checking if first npz matches any file here
+                    unc_dir = os.path.join(res_dir, "uncertainty_data")
+                    if os.path.isdir(unc_dir):
+                        npz_files = [f for f in os.listdir(unc_dir) if f.endswith(".npz")]
+                        if npz_files:
+                            d_file = npz_files[0]
+                            base_name = os.path.splitext(d_file)[0]
+                            matched = False
+                            for ext in [".tif", ".tiff", ".png", ".jpg"]:
+                                if os.path.exists(os.path.join(candidate, base_name + ext)):
+                                    matched = True
                                     break
-                                    
-                # Fallback to first existing label folder if file verification couldn't be confirmed
-                if not lbl_dir:
-                    for split in ["test", "val", "train", ""]:
-                        candidate = os.path.join(dataset_root, split, "label") if split else os.path.join(dataset_root, "label")
-                        candidate = os.path.normpath(candidate)
-                        if os.path.isdir(candidate):
-                            lbl_dir = candidate
-                            break
+                            if matched:
+                                lbl_dir = candidate
+                                break
+        except Exception:
+            pass
+
+        # 2. If not found by res_dir structure, fall back to last inference directory
+        if not lbl_dir:
+            if hasattr(self, 'last_infer_img_dir') and self.last_infer_img_dir:
+                guessed_lbl = os.path.join(os.path.dirname(self.last_infer_img_dir), "label")
+                if os.path.isdir(guessed_lbl):
+                    lbl_dir = guessed_lbl
+                
+        # 3. Verify if the resolved lbl_dir actually contains matching files
+        has_match = False
+        if lbl_dir:
+            try:
+                unc_dir = os.path.join(res_dir, "uncertainty_data")
+                if os.path.isdir(unc_dir):
+                    npz_files = [f for f in os.listdir(unc_dir) if f.endswith(".npz")]
+                    if npz_files:
+                        d_file = npz_files[0]
+                        base_name = os.path.splitext(d_file)[0]
+                        for ext in [".tif", ".tiff", ".png", ".jpg"]:
+                            if os.path.exists(os.path.join(lbl_dir, base_name + ext)):
+                                has_match = True
+                                break
             except Exception:
                 pass
                 
-        # If not found automatically, prompt user
-        if not lbl_dir:
+        # If not found or filenames do not match, prompt user
+        if not lbl_dir or not has_match:
             from qgis.PyQt.QtWidgets import QMessageBox
             QMessageBox.information(self.dialog, "Label Directory Needed", 
-                "Could not automatically locate the 'label' directory.\n\n"
-                "Please select the folder containing the ground truth label images for this dataset.")
+                "정합성이 일치하는 정답 라벨(label) 폴더를 자동으로 식별하지 못했습니다.\n\n"
+                "수동으로 해당 데이터셋의 정답 라벨(label) 이미지 폴더를 선택해 주세요.")
             lbl_dir = QFileDialog.getExistingDirectory(self.dialog, "Select Label Directory", os.path.dirname(res_dir))
             if not lbl_dir:
                 return # User cancelled
