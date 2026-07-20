@@ -44,7 +44,7 @@
 
 **[Copy & Paste 예시]**
 > (i) Dropout rate: 0.1 (MC Dropout 및 Stochastic Depth 적용)
-> (ii) Inference Background Threshold: 0.5 (최대 객체 신뢰도가 0.5 미만인 픽셀은 배경으로 복원)
+> (ii) Inference Background Threshold: 0.0 (기본값 0.0으로 비활성화하여 순수 Argmax 예측 수행)
 > (iii) ECE (Expected Calibration Error) 설정: 15 bins (0.0 ~ 1.0 구간 등간격 분할)
 > (iv) HITL (Human-in-the-Loop) 기준: 512x512 타일 단위 분할, 타일 내 유효 픽셀 불확실성의 '평균(Mean)' 산출
 
