@@ -124,8 +124,8 @@ def infer():
     parser.add_argument("--mapping_file", type=str, required=True)
     parser.add_argument("--seeds", type=str, default="42", help="Comma separated seeds")
     parser.add_argument("--mc_dropout", action="store_true")
-    parser.add_argument("--bg_threshold", type=float, default=0.5,
-                        help="객체 신뢰도가 이 값 미만인 픽셀은 배경(class 0)으로 처리")
+    parser.add_argument("--bg_threshold", type=float, default=0.0,
+                        help="객체 신뢰도가 이 값 미만인 픽셀은 배경(class 0)으로 처리 (기본값 0.0으로 무시)")
     parser.add_argument("--model_arch", type=str, default="mask2former")
     args = parser.parse_args()
 
